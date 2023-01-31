@@ -294,6 +294,12 @@ namespace Barotrauma
             [Serialize("", IsPropertySaveable.No)]
             public Identifier AfflictionOnSpawn { get; private set; }
 
+            [Serialize("", IsPropertySaveable.No)]
+            public string CharacterSpawnPoint { get; private set; }
+
+            [Serialize("", IsPropertySaveable.No)]
+            public string CharacterSpawnPointJob { get; private set; }
+
             [Serialize(1, IsPropertySaveable.No)]
             public int AfflictionStrength { get; private set; }
 
@@ -1654,10 +1660,67 @@ namespace Barotrauma
             {
                 foreach (CharacterSpawnInfo characterSpawnInfo in spawnCharacters)
                 {
+                    // What job spawn point to look for if the spawn position type is inside the submarine
+                    JobPrefab characterJob = null;
+                    if (characterSpawnInfo.CharacterSpawnPointJob != null)
+                    {
+                        characterJob = JobPrefab.Prefabs.Find(jp => jp.Name != null && jp.Identifier.ToString().ToLowerInvariant().Equals(characterSpawnInfo.CharacterSpawnPointJob.ToLowerInvariant(), StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    Vector2 characterPosition = position;
+                    List<Vector2> possibleSpawnPositions = new List<Vector2>();
+                    if (characterSpawnInfo.CharacterSpawnPoint != null)
+                    {
+                        switch (characterSpawnInfo.CharacterSpawnPoint.ToString().ToLowerInvariant())
+                        {
+                            case "inside":
+                                WayPoint jobWp = null;
+                                jobWp = WayPoint.GetRandom(SpawnType.Human, characterJob, Submarine.MainSub);
+                                if (jobWp == null)
+                                {
+                                    characterPosition = WayPoint.GetRandom(SpawnType.Human, null, Submarine.MainSub).WorldPosition;
+                                }
+                                else
+                                {
+                                    characterPosition = jobWp.WorldPosition;
+                                }
+                                break;
+                            case "outside":
+                                foreach (WayPoint wp in WayPoint.WayPointList)
+                                {
+                                    if (wp.Submarine != null) continue;
+
+                                    //don't spawn inside hulls
+                                    if (Hull.FindHull(wp.WorldPosition, null) != null) continue;
+
+                                    possibleSpawnPositions.Add(wp.WorldPosition);
+                                }
+                                characterPosition = possibleSpawnPositions.GetRandomUnsynced<Vector2>();
+                                break;
+                            case "near":
+                            case "close":
+                                foreach (WayPoint wp in WayPoint.WayPointList)
+                                {
+                                    if (wp.Submarine != null) continue;
+
+                                    //don't spawn inside hulls
+                                    if (Hull.FindHull(wp.WorldPosition, null) != null) continue;
+
+                                    float dist = (Vector2.Distance(wp.WorldPosition, Submarine.MainSub.WorldPosition));
+
+                                    DebugConsole.NewMessage("Width =" + " " + (Submarine.MainSub.Borders.Width) + " dist = " + dist);
+                                    if (dist > (Submarine.MainSub.Borders.Width * 2) && dist < (Submarine.MainSub.Borders.Width * 3)) possibleSpawnPositions.Add(wp.WorldPosition); ;
+                                }
+                                if (!possibleSpawnPositions.Any()) { possibleSpawnPositions.Add(WayPoint.GetRandom(SpawnType.Enemy).WorldPosition); }
+                                characterPosition = possibleSpawnPositions.GetRandomUnsynced<Vector2>();
+                                break;
+                        }
+                    }
+
                     var characters = new List<Character>();
                     for (int i = 0; i < characterSpawnInfo.Count; i++)
                     {
-                        Entity.Spawner.AddCharacterToSpawnQueue(characterSpawnInfo.SpeciesName, position + Rand.Vector(characterSpawnInfo.Spread, Rand.RandSync.Unsynced) + characterSpawnInfo.Offset,
+                        Entity.Spawner.AddCharacterToSpawnQueue(characterSpawnInfo.SpeciesName, characterPosition + Rand.Vector(characterSpawnInfo.Spread, Rand.RandSync.Unsynced) + characterSpawnInfo.Offset,
                             onSpawn: newCharacter =>
                             {
                                 if (characterSpawnInfo.TotalMaxCount > 0)
